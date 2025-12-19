@@ -9,11 +9,12 @@ import functions.basic.Log;
 import threads.Task;
 import threads.SimpleGenerator;
 import threads.SimpleIntegrator;
-import threads.Semaphore;
 import threads.Generator;
 import threads.Integrator;
+import threads.ReadWriteSemaphore;
 
 import java.io.*;
+import java.util.Random;
 
 public class    Main {
     private static final double PI = Math.PI;
@@ -39,21 +40,24 @@ public class    Main {
             analyzeFiles();
 
             // Тест 7: Интегрирование экспоненты
-            testIntegration();
+            testExpIntegration();
 
-            // Тест 8: Последовательная версия программы
+            // Тест 8: Последовательное выполнение заданий
             nonThread();
 
-            // Тест 9: Простая многопоточная версия
+            // Тест 9: Многопоточное выполнение заданий
             simpleThreads();
 
-            // Тест 10: Сложная многопоточная версия с семафором
+            // Тест 10: Многопоточное выполнение с семафором
             complicatedThreads();
 
         } catch (Exception e) {
             System.err.println("Ошибка: " + e.getMessage());
             e.printStackTrace();
         }
+        
+        System.out.println("\n=== ВСЕ ТЕСТЫ ЗАВЕРШЕНЫ ===");
+        System.out.println("Программа завершает работу.\n");
     }
 
     /**
@@ -319,207 +323,257 @@ public class    Main {
     }
 
     /**
-     * Тест 7: Интегрирование экспоненты от 0 до 1 методом трапеций
+     * Тест 7: Интегрирование экспоненты методом трапеций
      */
-    private static void testIntegration() {
+    private static void testExpIntegration() {
         System.out.println("=== ТЕСТ 7: ИНТЕГРИРОВАНИЕ ЭКСПОНЕНТЫ ===\n");
 
         Function exp = new Exp();
         double leftBound = 0.0;
         double rightBound = 1.0;
-
-        // Теоретическое значение интеграла exp(x) от 0 до 1 равно e - 1
+        
+        // Теоретическое значение интеграла: ∫₀¹ e^x dx = e - 1
         double theoreticalValue = Math.E - 1.0;
-        System.out.printf("Теоретическое значение интеграла exp(x) от %.1f до %.1f: %.10f%n%n",
-                leftBound, rightBound, theoreticalValue);
+        System.out.printf("Теоретическое значение интеграла: %.15f%n", theoreticalValue);
+        System.out.println("(∫₀¹ e^x dx = e - 1)\n");
 
         // Тестирование с разными шагами
-        double[] steps = {0.1, 0.01, 0.001, 0.0001, 0.00001};
-
-        System.out.printf("%-10s %-20s %-20s %-20s%n", "Шаг", "Численное значение", "Теоретическое", "Разница");
+        double[] steps = {0.1, 0.01, 0.001, 0.0001, 0.00001, 0.000001};
+        
+        System.out.println("Результаты интегрирования с разными шагами:");
+        System.out.printf("%-12s %-20s %-20s %-20s%n", "Шаг", "Вычисленное", "Теоретическое", "Погрешность");
         System.out.println("--------------------------------------------------------------------------------");
-
+        
         for (double step : steps) {
-            double numericalValue = Functions.integrate(exp, leftBound, rightBound, step);
-            double difference = Math.abs(numericalValue - theoreticalValue);
-            System.out.printf("%-10.5f %-20.10f %-20.10f %-20.2e%n",
-                    step, numericalValue, theoreticalValue, difference);
-        }
-
-        // Поиск шага для точности в 7 знаков после запятой (разница < 5e-8)
-        System.out.println("\nПоиск шага дискретизации для точности в 7 знаков после запятой:");
-        double targetAccuracy = 5e-8; // 5 * 10^-8
-        double currentStep = 0.1;
-
-        while (true) {
-            double numericalValue = Functions.integrate(exp, leftBound, rightBound, currentStep);
-            double difference = Math.abs(numericalValue - theoreticalValue);
-
-            if (difference < targetAccuracy) {
-                System.out.printf("Найден подходящий шаг: %.2e%n", currentStep);
-                System.out.printf("Численное значение: %.10f%n", numericalValue);
-                System.out.printf("Разница с теоретическим: %.2e%n", difference);
-                break;
-            }
-
-            currentStep /= 10.0; // уменьшаем шаг в 10 раз
-
-            // Защита от бесконечного цикла
-            if (currentStep < 1e-15) {
-                System.out.println("Не удалось достичь требуемой точности даже с очень малым шагом");
-                break;
+            try {
+                double computedValue = Functions.integrate(exp, leftBound, rightBound, step);
+                double error = Math.abs(computedValue - theoreticalValue);
+                System.out.printf("%-12.6f %-20.15f %-20.15f %-20.15f%n", 
+                    step, computedValue, theoreticalValue, error);
+            } catch (Exception e) {
+                System.err.println("Ошибка при шаге " + step + ": " + e.getMessage());
             }
         }
 
-        // Тест с выходом за границы области определения
-        System.out.println("\nТест с выходом за границы области определения:");
-        try {
-            Function sin = new Sin();
-            // Попытка интегрировать sin(x) на интервале, выходящем за [0, π]
-            Functions.integrate(sin, -1.0, PI + 1.0, 0.1);
-        } catch (IllegalArgumentException e) {
-            System.out.println("Обнаружена ошибка (как и ожидалось): " + e.getMessage());
+        // Поиск шага для точности в 7 знаке после запятой
+        System.out.println("\nПоиск шага для точности в 7 знаке после запятой:");
+        System.out.println("(Погрешность должна быть < 0.0000001 = 1e-7)\n");
+        
+        double targetError = 1e-7;
+        
+        // Проверка с различными шагами для определения минимального шага
+        // Проверяем от большего к меньшему, чтобы найти наибольший шаг, который еще дает нужную точность
+        System.out.println("Проверка различных шагов (от большего к меньшему):");
+        double[] testSteps = {0.001, 0.0005, 0.0001, 0.00005, 0.00001, 0.000005, 0.000001};
+        double foundStep = -1;
+        
+        for (double step : testSteps) {
+            try {
+                double computedValue = Functions.integrate(exp, leftBound, rightBound, step);
+                double error = Math.abs(computedValue - theoreticalValue);
+                boolean meetsTarget = error < targetError;
+                String status = meetsTarget ? "✓ (достигнута)" : "✗";
+                System.out.printf("Шаг: %.6f, Погрешность: %.15f (%s)%n", 
+                    step, error, status);
+                
+                // Находим первый (наибольший) шаг, который дает нужную точность
+                if (meetsTarget && foundStep < 0) {
+                    foundStep = step;
+                }
+            } catch (Exception e) {
+                System.err.println("Ошибка при шаге " + step + ": " + e.getMessage());
+            }
         }
-
+        
+        // Вывод результата
+        if (foundStep > 0) {
+            System.out.printf("\n✓ Найден шаг для точности в 7 знаке: %.6f%n", foundStep);
+            System.out.println("  (Это наибольший шаг, который обеспечивает требуемую точность)");
+            try {
+                double finalValue = Functions.integrate(exp, leftBound, rightBound, foundStep);
+                double finalError = Math.abs(finalValue - theoreticalValue);
+                System.out.printf("  Вычисленное значение: %.15f%n", finalValue);
+                System.out.printf("  Теоретическое значение: %.15f%n", theoreticalValue);
+                System.out.printf("  Погрешность: %.15f%n", finalError);
+                System.out.printf("  Требуемая погрешность: %.15f%n", targetError);
+            } catch (Exception e) {
+                System.err.println("Ошибка: " + e.getMessage());
+            }
+        } else {
+            System.out.println("\nНе удалось найти шаг, обеспечивающий требуемую точность.");
+            System.out.println("Попробуйте использовать меньший шаг.");
+        }
+        
         System.out.println();
     }
 
     /**
-     * Последовательная версия программы без применения потоков.
-     * Выполняет заданное количество интегрирований логарифмических функций.
+     * Последовательная (без применения потоков) версия программы.
+     * Создает задания на интегрирование и выполняет их последовательно.
      */
     private static void nonThread() {
-        System.out.println("=== ПОСЛЕДОВАТЕЛЬНАЯ ВЕРСИЯ ПРОГРАММЫ ===\n");
+        System.out.println("=== ТЕСТ 8: ПОСЛЕДОВАТЕЛЬНОЕ ВЫПОЛНЕНИЕ ЗАДАНИЙ ===\n");
 
+        Random random = new Random();
         Task task = new Task();
-        task.setTaskCount(100); // Минимум 100 заданий
-
-        for (int i = 0; i < task.getTaskCount(); i++) {
-            // Создание логарифмической функции с случайным основанием от 1 до 10
-            // Основание не должно быть равно 1, поэтому используем диапазон (1, 10]
-            double base = 1.0 + Math.random() * 9.0; // от 1+eps до 10
-            Function logFunction = new Log(base);
-            task.setFunction(logFunction);
-
-            // Левая граница: случайно от 0.01 до 100 (чтобы избежать x=0)
-            double leftBound = 0.01 + Math.random() * 99.99;
-            task.setLeftBound(leftBound);
-
-            // Правая граница: случайно от 100 до 200
-            double rightBound = 100.0 + Math.random() * 100.0;
-            task.setRightBound(rightBound);
-
-            // Шаг дискретизации: случайно от 0 до 1
-            double step = Math.random(); // от 0.0 до 1.0
-            task.setStep(step);
-
-            // Вывод сообщения Source
-            System.out.printf("Source %.2f %.2f %.5f%n", leftBound, rightBound, step);
-
+        
+        // Устанавливаем количество заданий (минимум 100)
+        int tasksCount = 100;
+        task.setTasksCount(tasksCount);
+        
+        System.out.println("Количество заданий: " + tasksCount + "\n");
+        
+        for (int i = 0; i < tasksCount; i++) {
             try {
-                // Вычисление интеграла
-                double result = Functions.integrate(task.getFunction(), task.getLeftBound(),
-                        task.getRightBound(), task.getStep());
-
-                // Вывод сообщения Result
-                System.out.printf("Result %.2f %.2f %.5f %.10f%n", leftBound, rightBound, step, result);
+                // Создаем логарифмическую функцию со случайным основанием от 1 до 10
+                // Основание должно быть > 1 и не равно 1, поэтому используем диапазон от 1+epsilon до 10
+                double base = 1.0 + 1e-10 + random.nextDouble() * (10.0 - 1.0 - 1e-10); // от чуть больше 1 до 10
+                Function logFunction = new Log(base);
+                task.setFunction(logFunction);
+                
+                // Левая граница: случайно от 0 до 100
+                double leftBound = random.nextDouble() * 100.0;
+                
+                // Правая граница: случайно от 100 до 200
+                double rightBound = 100.0 + random.nextDouble() * 100.0;
+                
+                // Убеждаемся, что правая граница больше левой
+                if (rightBound <= leftBound) {
+                    rightBound = leftBound + 0.1;
+                }
+                
+                task.setLeftBound(leftBound);
+                task.setRightBound(rightBound);
+                
+                // Шаг дискретизации: случайно от 0 до 1
+                // Шаг должен быть положительным, поэтому если получили 0, используем минимальное значение
+                double step = random.nextDouble();
+                if (step == 0.0 || step < 1e-10) {
+                    step = 1e-10; // Минимальное положительное значение для избежания проблем
+                }
+                // Убеждаемся, что шаг не больше длины интервала
+                double intervalLength = rightBound - leftBound;
+                if (step > intervalLength) {
+                    step = intervalLength / 2.0; // Используем половину длины интервала
+                }
+                task.setStep(step);
+                
+                // Выводим сообщение Source
+                System.out.printf("Source %.6f %.6f %.6f%n", 
+                    task.getLeftBound(), task.getRightBound(), task.getStep());
+                
+                // Вычисляем значение интеграла
+                double result = Functions.integrate(
+                    task.getFunction(), 
+                    task.getLeftBound(), 
+                    task.getRightBound(), 
+                    task.getStep()
+                );
+                
+                // Выводим сообщение Result
+                System.out.printf("Result %.6f %.6f %.6f %.15f%n", 
+                    task.getLeftBound(), task.getRightBound(), task.getStep(), result);
+                
             } catch (Exception e) {
-                System.out.printf("Result %.2f %.2f %.5f ERROR: %s%n", leftBound, rightBound, step, e.getMessage());
+                System.err.printf("Ошибка при выполнении задания %d: %s%n", i + 1, e.getMessage());
             }
         }
-
-        System.out.println();
+        
+        System.out.println("\nВсе задания выполнены.\n");
     }
 
     /**
-     * Простая многопоточная версия программы с двумя потоками.
+     * Многопоточная версия программы с использованием SimpleGenerator и SimpleIntegrator.
+     * Создает два потока: один генерирует задания, другой решает их.
      */
     private static void simpleThreads() {
-        System.out.println("=== ПРОСТАЯ МНОГОПОТОЧНАЯ ВЕРСИЯ ПРОГРАММЫ ===\n");
+        System.out.println("=== ТЕСТ 9: МНОГОПОТОЧНОЕ ВЫПОЛНЕНИЕ ЗАДАНИЙ ===\n");
 
         Task task = new Task();
-        task.setTaskCount(100); // Минимум 100 заданий
-
-        // Создание потоков
-        Thread generatorThread = new Thread(new SimpleGenerator(task), "Generator");
-        Thread integratorThread = new Thread(new SimpleIntegrator(task), "Integrator");
-
-        // Установка приоритетов (генератор имеет более высокий приоритет)
-        generatorThread.setPriority(Thread.NORM_PRIORITY + 1);
+        
+        // Устанавливаем количество заданий (минимум 100)
+        int tasksCount = 100;
+        task.setTasksCount(tasksCount);
+        
+        System.out.println("Количество заданий: " + tasksCount + "\n");
+        
+        // Создаем потоки
+        Thread generatorThread = new Thread(new SimpleGenerator(task));
+        Thread integratorThread = new Thread(new SimpleIntegrator(task));
+        
+        // Устанавливаем приоритеты потоков (можно изменять для экспериментов)
+        generatorThread.setPriority(Thread.NORM_PRIORITY);
         integratorThread.setPriority(Thread.NORM_PRIORITY);
-
-        // Запуск потоков
+        
+        // Запускаем потоки
         generatorThread.start();
         integratorThread.start();
-
-        // Ожидание 50 миллисекунд, затем прерывание потоков
-        try {
-            Thread.sleep(50);
-            System.out.println("Прерывание работы потоков...");
-            generatorThread.interrupt();
-            integratorThread.interrupt();
-        } catch (InterruptedException e) {
-            System.err.println("Главный поток был прерван во время ожидания: " + e.getMessage());
-        }
-
-        // Ожидание завершения потоков
+        
+        // Ждем завершения обоих потоков
         try {
             generatorThread.join();
             integratorThread.join();
-            System.out.println("Все потоки завершили работу.");
         } catch (InterruptedException e) {
-            System.err.println("Главный поток был прерван при ожидании завершения: " + e.getMessage());
+            System.err.println("Ошибка при ожидании завершения потоков: " + e.getMessage());
+            Thread.currentThread().interrupt();
         }
-
-        System.out.println();
+        
+        System.out.println("\nВсе задания выполнены.\n");
     }
 
     /**
-     * Сложная многопоточная версия программы с использованием семафора.
+     * Многопоточная версия программы с использованием семафора.
+     * Создает два потока: Generator и Integrator, которые используют семафор
+     * для синхронизации доступа к заданию.
      */
     private static void complicatedThreads() {
-        System.out.println("=== СЛОЖНАЯ МНОГОПОТОЧНАЯ ВЕРСИЯ ПРОГРАММЫ ===\n");
+        System.out.println("=== ТЕСТ 10: МНОГОПОТОЧНОЕ ВЫПОЛНЕНИЕ С СЕМАФОРОМ ===\n");
 
         Task task = new Task();
-        task.setTaskCount(100); // Минимум 100 заданий
-
-        // Создание семафора
-        Semaphore semaphore = new Semaphore();
-
-        // Создание потоков
+        ReadWriteSemaphore semaphore = new ReadWriteSemaphore();
+        
+        // Устанавливаем количество заданий (минимум 100)
+        int tasksCount = 100;
+        task.setTasksCount(tasksCount);
+        
+        System.out.println("Количество заданий: " + tasksCount + "\n");
+        
+        // Создаем потоки
         Generator generatorThread = new Generator(task, semaphore);
         Integrator integratorThread = new Integrator(task, semaphore);
-
-        generatorThread.setName("Generator");
-        integratorThread.setName("Integrator");
-
-        // Установка приоритетов (генератор имеет более высокий приоритет)
-        generatorThread.setPriority(Thread.NORM_PRIORITY + 1);
+        
+        // Устанавливаем потоки как daemon, чтобы они автоматически завершались при завершении main
+        generatorThread.setDaemon(true);
+        integratorThread.setDaemon(true);
+        
+        // Устанавливаем приоритеты потоков (можно изменять для экспериментов)
+        generatorThread.setPriority(Thread.NORM_PRIORITY);
         integratorThread.setPriority(Thread.NORM_PRIORITY);
-
-        // Запуск потоков
+        
+        // Запускаем потоки
         generatorThread.start();
         integratorThread.start();
 
-        // Ожидание 50 миллисекунд, затем прерывание потоков
+        // Ждем завершения потоков (интегратор должен обработать все задания)
         try {
-            Thread.sleep(50);
-            System.out.println("Прерывание работы потоков...");
-            generatorThread.interrupt();
-            integratorThread.interrupt();
-        } catch (InterruptedException e) {
-            System.err.println("Главный поток был прерван во время ожидания: " + e.getMessage());
-        }
-
-        // Ожидание завершения потоков
-        try {
+            System.out.println("Ожидание завершения обработки всех заданий...");
+            // Ждем завершения генератора
             generatorThread.join();
+            System.out.println("[Main] Поток Generator завершен");
+            // Ждем завершения интегратора (он должен обработать все задания)
             integratorThread.join();
-            System.out.println("Все потоки завершили работу.");
+            System.out.println("[Main] Поток Integrator завершен - все задания обработаны\n");
         } catch (InterruptedException e) {
-            System.err.println("Главный поток был прерван при ожидании завершения: " + e.getMessage());
+            System.err.println("Ошибка при ожидании завершения потоков: " + e.getMessage());
+            Thread.currentThread().interrupt();
         }
 
-        System.out.println();
+        System.out.println("\n[Main] Все задания выполнены.");
+        System.out.println("Выполнение заданий завершено.\n");
+        
+        // Принудительно завершаем работу, если потоки все еще активны
+        if (generatorThread.isAlive() || integratorThread.isAlive()) {
+            System.out.println("[Main] Предупреждение: некоторые потоки все еще активны, но программа завершается.");
+        }
     }
 }

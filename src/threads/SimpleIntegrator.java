@@ -19,16 +19,18 @@ public class SimpleIntegrator implements Runnable {
 
     @Override
     public void run() {
-        // Небольшая задержка для предотвращения NullPointerException
-        try {
-            Thread.sleep(10);
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
-            return;
-        }
-
-        for (int i = 0; i < task.getTaskCount(); i++) {
+        for (int i = 0; i < task.getTasksCount(); i++) {
+            // Ждем, пока задание будет готово
             synchronized (task) {
+                while (!task.isReady()) {
+                    try {
+                        task.wait();
+                    } catch (InterruptedException e) {
+                        Thread.currentThread().interrupt();
+                        return;
+                    }
+                }
+
                 try {
                     // Вычисление интеграла
                     double result = Functions.integrate(task.getFunction(), task.getLeftBound(),
@@ -37,6 +39,13 @@ public class SimpleIntegrator implements Runnable {
                     // Вывод сообщения Result
                     System.out.printf("Result %.2f %.2f %.5f %.10f%n",
                             task.getLeftBound(), task.getRightBound(), task.getStep(), result);
+
+                    // Помечаем задание как обработанное и сбрасываем готовность
+                    task.setProcessed(true);
+                    task.setReady(false); // Задание обработано, сбрасываем флаг готовности
+
+                    // Уведомляем генератор
+                    task.notifyAll();
                 } catch (Exception e) {
                     System.out.printf("Result %.2f %.2f %.5f ERROR: %s%n",
                             task.getLeftBound(), task.getRightBound(), task.getStep(), e.getMessage());
